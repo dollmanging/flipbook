@@ -12,7 +12,7 @@
     html, body {
       width: 100%;
       height: 100%;
-      background-color: #1a1a1a;
+      background-color: #121212;
       color: #eaeaea;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       display: flex;
@@ -22,15 +22,15 @@
     header {
       height: 50px;
       padding: 0 20px;
-      background: #282828;
+      background: #1f1f1f;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+      border-bottom: 1px solid #2d2d2d;
       z-index: 10;
       flex-shrink: 0;
     }
-    .title-area h2 { font-size: 1rem; color: #fff; }
+    .title-area h2 { font-size: 0.95rem; color: #f3f4f6; font-weight: 500; }
     .controls { display: flex; align-items: center; gap: 10px; }
     .file-btn-wrapper { position: relative; display: inline-block; }
     .btn {
@@ -41,20 +41,21 @@
       border: none;
       border-radius: 6px;
       cursor: pointer;
+      font-weight: 500;
       transition: background-color 0.2s;
     }
     .btn:hover { background-color: #2563eb; }
     .btn-nav {
-      background-color: #4b5563;
-      padding: 6px 10px;
+      background-color: #374151;
+      padding: 6px 12px;
       font-size: 0.8rem;
     }
-    .btn-nav:hover { background-color: #374151; }
+    .btn-nav:hover { background-color: #4b5563; }
     input[type="file"] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
     .page-indicator {
       font-size: 0.85rem;
       font-weight: 600;
-      color: #60a5fa;
+      color: #9ca3af;
       background: #111827;
       padding: 4px 12px;
       border-radius: 20px;
@@ -70,10 +71,13 @@
       padding: 10px;
       overflow: hidden;
       position: relative;
+      background: #181818;
     }
     #book {
-      max-width: 100%;
-      max-height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
     }
     .my-page {
       background-color: #ffffff;
@@ -87,12 +91,12 @@
     .my-page img {
       width: 100%;
       height: 100%;
-      object-fit: contain; /* 비율 유지하며 깔끔하게 표시 */
+      object-fit: cover; /* 여백 없이 페이지 영역에 꽉 차게 밀착 */
       pointer-events: none;
     }
     #loading-overlay {
       position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
+      background: rgba(0,0,0,0.8); display: flex; flex-direction: column;
       justify-content: center; align-items: center; z-index: 100;
       opacity: 0; pointer-events: none; transition: opacity 0.3s;
     }
@@ -108,7 +112,7 @@
 
   <header>
     <div class="title-area">
-      <h2>📖 플립북 뷰어</h2>
+      <h2>📖 플립북 E-Book 뷰어</h2>
     </div>
     <div class="controls">
       <div class="file-btn-wrapper">
@@ -145,7 +149,6 @@
     const loadingText = document.getElementById('loadingText');
     const bookContainer = document.getElementById('book');
 
-    // 키보드 조작 이벤트
     window.addEventListener('keydown', (e) => {
       if (!pageFlip) return;
       if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ' || e.key === 'PageDown') {
@@ -270,9 +273,7 @@
         pageFlip = null;
       }
 
-      // 1. 이미지 로드 및 첫 페이지의 실제 가로/세로 비율 측정
-      let imgWidth = 3;
-      let imgHeight = 4;
+      let naturalAspect = 0.707; // 기본 A4 비율
 
       const imgPromises = imageUrls.map((url, index) => {
         return new Promise((resolve) => {
@@ -281,8 +282,7 @@
           const img = document.createElement('img');
           img.onload = () => {
             if (index === 0 && img.naturalWidth && img.naturalHeight) {
-              imgWidth = img.naturalWidth;
-              imgHeight = img.naturalHeight;
+              naturalAspect = img.naturalWidth / img.naturalHeight;
             }
             resolve();
           };
@@ -295,21 +295,20 @@
 
       await Promise.all(imgPromises);
 
-      // 2. 화면 높이에 기반하여 자연스러운 비율의 단면 크기 계산
       const containerHeight = document.getElementById('viewer-container').clientHeight - 20;
-      const calculatedWidth = Math.floor(containerHeight * (imgWidth / imgHeight));
+      const calculatedWidth = Math.floor(containerHeight * naturalAspect);
 
       const PageFlipClass = window.St ? window.St.PageFlip : window.PageFlip;
 
       pageFlip = new PageFlipClass(bookContainer, {
         width: calculatedWidth,
         height: containerHeight,
-        size: "stretch",
-        minWidth: 200,
-        maxWidth: 1200,
-        minHeight: 300,
-        maxHeight: 1600,
-        maxShadowOpacity: 0.5,
+        size: "fixed",
+        minWidth: 100,
+        maxWidth: 2000,
+        minHeight: 100,
+        maxHeight: 2000,
+        maxShadowOpacity: 0.4,
         showCover: true
       });
 
