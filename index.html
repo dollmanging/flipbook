@@ -20,24 +20,24 @@
       overflow: hidden;
     }
     header {
-      padding: 12px 20px;
+      height: 50px;
+      padding: 0 20px;
       background: #282828;
       display: flex;
       align-items: center;
       justify-content: space-between;
       box-shadow: 0 2px 10px rgba(0,0,0,0.5);
       z-index: 10;
-      flex-wrap: wrap;
-      gap: 10px;
+      flex-shrink: 0;
     }
-    .title-area h2 { font-size: 1.1rem; color: #fff; }
-    .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .title-area h2 { font-size: 1rem; color: #fff; }
+    .controls { display: flex; align-items: center; gap: 10px; }
     .file-btn-wrapper { position: relative; display: inline-block; }
     .btn {
       background-color: #3b82f6;
       color: white;
-      padding: 8px 16px;
-      font-size: 0.9rem;
+      padding: 6px 14px;
+      font-size: 0.85rem;
       border: none;
       border-radius: 6px;
       cursor: pointer;
@@ -46,17 +46,17 @@
     .btn:hover { background-color: #2563eb; }
     .btn-nav {
       background-color: #4b5563;
-      padding: 8px 12px;
-      font-size: 0.85rem;
+      padding: 6px 10px;
+      font-size: 0.8rem;
     }
     .btn-nav:hover { background-color: #374151; }
     input[type="file"] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
     .page-indicator {
-      font-size: 0.95rem;
+      font-size: 0.85rem;
       font-weight: 600;
       color: #60a5fa;
       background: #111827;
-      padding: 6px 14px;
+      padding: 4px 12px;
       border-radius: 20px;
       border: 1px solid #374151;
     }
@@ -66,15 +66,14 @@
       justify-content: center;
       align-items: center;
       width: 100%;
-      height: calc(100vh - 60px);
-      padding: 20px;
+      height: calc(100vh - 50px);
+      padding: 0;
       overflow: hidden;
       position: relative;
     }
     #book {
-      width: 900px;
-      height: 600px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+      width: 100%;
+      height: 100%;
     }
     .my-page {
       background-color: #ffffff;
@@ -88,7 +87,7 @@
     .my-page img {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: fill; /* 여백 없이 꽉 차게 변경 */
       pointer-events: none;
     }
     #loading-overlay {
@@ -109,14 +108,13 @@
 
   <header>
     <div class="title-area">
-      <h2>📖 나만의 무료 플립북 뷰어</h2>
+      <h2>📖 플립북 뷰어</h2>
     </div>
     <div class="controls">
       <div class="file-btn-wrapper">
-        <button class="btn">📁 파일 불러오기 (ZIP / PDF / 사진들)</button>
+        <button class="btn">📁 파일 열기</button>
         <input type="file" id="fileInput" multiple accept=".zip,.pdf,image/*">
       </div>
-      
       <button class="btn btn-nav" id="prevBtn">◀ 이전</button>
       <span class="page-indicator" id="pageNumber">0 / 0</span>
       <button class="btn btn-nav" id="nextBtn">다음 ▶</button>
@@ -129,7 +127,7 @@
 
   <div id="loading-overlay">
     <div class="spinner"></div>
-    <div id="loadingText">파일을 처리하는 중입니다...</div>
+    <div id="loadingText">파일 처리 중...</div>
   </div>
 
   <script>
@@ -146,6 +144,18 @@
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingText = document.getElementById('loadingText');
     const bookContainer = document.getElementById('book');
+
+    // 키보드 조작 이벤트 추가
+    window.addEventListener('keydown', (e) => {
+      if (!pageFlip) return;
+      if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        pageFlip.flipNext();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        pageFlip.flipPrev();
+      }
+    });
 
     fileInput.addEventListener('change', async function(e) {
       const files = Array.from(e.target.files);
@@ -181,13 +191,8 @@
       }
     });
 
-    prevBtn.addEventListener('click', () => {
-      if (pageFlip) pageFlip.flipPrev();
-    });
-
-    nextBtn.addEventListener('click', () => {
-      if (pageFlip) pageFlip.flipNext();
-    });
+    prevBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipPrev(); });
+    nextBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipNext(); });
 
     async function processZipFile(zipFile) {
       const zip = new JSZip();
@@ -204,7 +209,7 @@
 
       const urls = [];
       for (let i = 0; i < imageEntries.length; i++) {
-        loadingText.textContent = `ZIP 압축 해제 중... (${i + 1}/${imageEntries.length})`;
+        loadingText.textContent = `ZIP 처리 중... (${i + 1}/${imageEntries.length})`;
         const base64 = await zipEntriesToBase64(imageEntries[i]);
         urls.push(base64);
       }
@@ -227,7 +232,7 @@
       const urls = [];
 
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        loadingText.textContent = `PDF 페이지 변환 중... (${pageNum}/${pdf.numPages})`;
+        loadingText.textContent = `PDF 변환 중... (${pageNum}/${pdf.numPages})`;
         const page = await pdf.getPage(pageNum);
         const viewport = page.getViewport({ scale: 1.5 });
 
@@ -271,26 +276,28 @@
           page.className = 'my-page';
           const img = document.createElement('img');
           img.onload = () => resolve();
-          img.onerror = () => resolve(); // 오류 발생 시에도 차단되지 않도록 진행
+          img.onerror = () => resolve();
           img.src = url;
           page.appendChild(img);
           bookContainer.appendChild(page);
         });
       });
 
-      // 모든 이미지 로딩 완료 대기
       await Promise.all(imgPromises);
 
       const PageFlipClass = window.St ? window.St.PageFlip : window.PageFlip;
       
+      const containerWidth = bookContainer.clientWidth;
+      const containerHeight = bookContainer.clientHeight;
+
       pageFlip = new PageFlipClass(bookContainer, {
-        width: 450,
-        height: 600,
-        size: "fixed",
-        minWidth: 300,
-        maxWidth: 1000,
-        minHeight: 400,
-        maxHeight: 1400,
+        width: Math.floor(containerWidth / 2),
+        height: containerHeight,
+        size: "stretch",
+        minWidth: 100,
+        maxWidth: 2000,
+        minHeight: 100,
+        maxHeight: 2000,
         maxShadowOpacity: 0.5,
         showCover: true
       });
