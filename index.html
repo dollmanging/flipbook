@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>전자책 Flipbook 뷰어</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #1a1a1a;
+      color: #eaeaea;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      padding: 12px 20px;
+      background: #282828;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+      z-index: 10;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .title-area h2 { font-size: 1.1rem; color: #fff; }
+    .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .file-btn-wrapper { position: relative; display: inline-block; }
+    .btn {
+      background-color: #3b82f6;
+      color: white;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .btn:hover { background-color: #2563eb; }
+    .btn-nav {
+      background-color: #4b5563;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+    }
+    .btn-nav:hover { background-color: #374151; }
+    input[type="file"] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+    .page-indicator {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #60a5fa;
+      background: #111827;
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid #374151;
+    }
+    #viewer-container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: calc(100vh - 60px);
+      padding: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+    #book {
+      width: 900px;
+      height: 600px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+    }
+    .my-page {
+      background-color: #ffffff;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    .my-page img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    #loading-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
+      justify-content: center; align-items: center; z-index: 100;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    #loading-overlay.active { opacity: 1; pointer-events: auto; }
+    .spinner {
+      width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1);
+      border-left-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-area">
+      <h2>📖 나만의 무료 플립북 뷰어</h2>
+    </div>
+    <div class="controls">
+      <div class="file-btn-wrapper">
+        <button class="btn">📁 파일 불러오기 (ZIP / PDF / 사진들)</button>
+        <input type="file" id="fileInput" multiple accept=".zip,.pdf,image/*">
+      </div>
+      
+      <button class="btn btn-nav" id="prevBtn">◀ 이전</button>
+      <span class="page-indicator" id="pageNumber">0 / 0</span>
+      <button class="btn btn-nav" id="nextBtn">다음 ▶</button>
+    </div>
+  </header>
+
+  <div id="viewer-container">
+    <div id="book"></div>
+  </div>
+
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div id="loadingText">파일을 처리하는 중입니다...</div>
+  </div>
+
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
+    
+    let pageFlip = null;
+
+    const fileInput = document.getElementById('fileInput');
+    const pageNumber = document.getElementById('pageNumber');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loadingText');
+    const bookContainer = document.getElementById('book');
+
+    fileInput.addEventListener('change', async function(e) {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+
+      showLoading('파일 처리 중...');
+
+      try {
+        let imageUrls = [];
+
+        if (files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
+          imageUrls = await processZipFile(files[0]);
+        } 
+        else if (files.length === 1 && files[0].name.toLowerCase().endsWith('.pdf')) {
+          imageUrls = await processPdfFile(files[0]);
+        } 
+        else {
+          imageUrls = await processImageFiles(files);
+        }
+
+        if (imageUrls.length === 0) {
+          alert('이미지를 찾을 수 없습니다.');
+          hideLoading();
+          return;
+        }
+
+        await renderBook(imageUrls);
+
+      } catch (err) {
+        alert('처리 오류: ' + err.message);
+      } finally {
+        hideLoading();
+      }
+    });
+
+    prevBtn.addEventListener('click', () => {
+      if (pageFlip) pageFlip.flipPrev();
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (pageFlip) pageFlip.flipNext();
+    });
+
+    async function processZipFile(zipFile) {
+      const zip = new JSZip();
+      const zipContent = await zip.loadAsync(zipFile);
+      const imageEntries = [];
+
+      zipContent.forEach((relativePath, zipEntry) => {
+        if (!zipEntry.dir && /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(zipEntry.name)) {
+          imageEntries.push(zipEntry);
+        }
+      });
+
+      imageEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+      const urls = [];
+      for (let i = 0; i < imageEntries.length; i++) {
+        loadingText.textContent = `ZIP 압축 해제 중... (${i + 1}/${imageEntries.length})`;
+        const base64 = await zipEntriesToBase64(imageEntries[i]);
+        urls.push(base64);
+      }
+      return urls;
+    }
+
+    function zipEntriesToBase64(zipEntry) {
+      return new Promise((resolve) => {
+        zipEntry.async('base64').then(data => {
+          const ext = zipEntry.name.split('.').pop().toLowerCase();
+          const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+          resolve(`data:${mime};base64,${data}`);
+        });
+      });
+    }
+
+    async function processPdfFile(pdfFile) {
+      const arrayBuffer = await pdfFile.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const urls = [];
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        loadingText.textContent = `PDF 페이지 변환 중... (${pageNum}/${pdf.numPages})`;
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+        urls.push(canvas.toDataURL('image/jpeg', 0.85));
+      }
+      return urls;
+    }
+
+    async function processImageFiles(imageFiles) {
+      const validImages = imageFiles.filter(f => f.type.startsWith('image/'));
+      validImages.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      
+      const promises = validImages.map(file => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.readAsDataURL(file);
+        });
+      });
+
+      return Promise.all(promises);
+    }
+
+    async function renderBook(imageUrls) {
+      bookContainer.innerHTML = '';
+      if (pageFlip) {
+        try { pageFlip.destroy(); } catch(e){}
+        pageFlip = null;
+      }
+
+      const imgPromises = imageUrls.map(url => {
+        return new Promise((resolve) => {
+          const page = document.createElement('div');
+          page.className = 'my-page';
+          const img = document.createElement('img');
+          img.onload = () => resolve();
+          img.onerror = () => resolve(); // 오류 발생 시에도 차단되지 않도록 진행
+          img.src = url;
+          page.appendChild(img);
+          bookContainer.appendChild(page);
+        });
+      });
+
+      // 모든 이미지 로딩 완료 대기
+      await Promise.all(imgPromises);
+
+      const PageFlipClass = window.St ? window.St.PageFlip : window.PageFlip;
+      
+      pageFlip = new PageFlipClass(bookContainer, {
+        width: 450,
+        height: 600,
+        size: "fixed",
+        minWidth: 300,
+        maxWidth: 1000,
+        minHeight: 400,
+        maxHeight: 1400,
+        maxShadowOpacity: 0.5,
+        showCover: true
+      });
+
+      const pages = bookContainer.querySelectorAll('.my-page');
+      if (pages.length > 0) {
+        pageFlip.loadFromHTML(pages);
+        updatePageIndicator();
+
+        pageFlip.on('flip', (e) => {
+          updatePageIndicator();
+        });
+      }
+    }
+
+    function updatePageIndicator() {
+      if (!pageFlip) return;
+      const totalPages = pageFlip.getPageCount();
+      const currentPage = pageFlip.getCurrentPageIndex() + 1;
+      pageNumber.textContent = `${currentPage} / ${totalPages}`;
+    }
+
+    function showLoading(msg) { loadingText.textContent = msg; loadingOverlay.classList.add('active'); }
+    function hideLoading() { loadingOverlay.classList.remove('active'); }
+  </script>
+</body>
+</html>
