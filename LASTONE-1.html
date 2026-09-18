@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>전자책 Flipbook 뷰어</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #121212;
+      color: #eaeaea;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      height: 50px;
+      padding: 0 20px;
+      background: #1f1f1f;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #2d2d2d;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    .title-area h2 { font-size: 0.95rem; color: #f3f4f6; font-weight: 500; }
+    .controls { display: flex; align-items: center; gap: 10px; }
+    .file-btn-wrapper { position: relative; display: inline-block; }
+    .btn {
+      background-color: #3b82f6;
+      color: white;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    .btn:hover { background-color: #2563eb; }
+    .btn-nav {
+      background-color: #374151;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+    }
+    .btn-nav:hover { background-color: #4b5563; }
+    input[type="file"] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+    .page-indicator {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #9ca3af;
+      background: #111827;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid #374151;
+    }
+    #viewer-container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: calc(100vh - 50px);
+      padding: 10px;
+      overflow: hidden;
+      position: relative;
+      background: #181818;
+    }
+    #book {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    }
+    .my-page {
+      background-color: #ffffff;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    .my-page img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover; /* 여백 없이 페이지 영역에 꽉 차게 밀착 */
+      pointer-events: none;
+    }
+    #loading-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.8); display: flex; flex-direction: column;
+      justify-content: center; align-items: center; z-index: 100;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    #loading-overlay.active { opacity: 1; pointer-events: auto; }
+    .spinner {
+      width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1);
+      border-left-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-area">
+      <h2>📖 플립북 E-Book 뷰어</h2>
+    </div>
+    <div class="controls">
+      <div class="file-btn-wrapper">
+        <button class="btn">📁 파일 열기</button>
+        <input type="file" id="fileInput" multiple accept=".zip,.pdf,image/*">
+      </div>
+      <button class="btn btn-nav" id="prevBtn">◀ 이전</button>
+      <span class="page-indicator" id="pageNumber">0 / 0</span>
+      <button class="btn btn-nav" id="nextBtn">다음 ▶</button>
+    </div>
+  </header>
+
+  <div id="viewer-container">
+    <div id="book"></div>
+  </div>
+
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div id="loadingText">파일 처리 중...</div>
+  </div>
+
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
+    
+    let pageFlip = null;
+
+    const fileInput = document.getElementById('fileInput');
+    const pageNumber = document.getElementById('pageNumber');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loadingText');
+    const bookContainer = document.getElementById('book');
+
+    window.addEventListener('keydown', (e) => {
+      if (!pageFlip) return;
+      if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        pageFlip.flipNext();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        pageFlip.flipPrev();
+      }
+    });
+
+    fileInput.addEventListener('change', async function(e) {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+
+      showLoading('파일 처리 중...');
+
+      try {
+        let imageUrls = [];
+
+        if (files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
+          imageUrls = await processZipFile(files[0]);
+        } 
+        else if (files.length === 1 && files[0].name.toLowerCase().endsWith('.pdf')) {
+          imageUrls = await processPdfFile(files[0]);
+        } 
+        else {
+          imageUrls = await processImageFiles(files);
+        }
+
+        if (imageUrls.length === 0) {
+          alert('이미지를 찾을 수 없습니다.');
+          hideLoading();
+          return;
+        }
+
+        await renderBook(imageUrls);
+
+      } catch (err) {
+        alert('처리 오류: ' + err.message);
+      } finally {
+        hideLoading();
+      }
+    });
+
+    prevBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipPrev(); });
+    nextBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipNext(); });
+
+    async function processZipFile(zipFile) {
+      const zip = new JSZip();
+      const zipContent = await zip.loadAsync(zipFile);
+      const imageEntries = [];
+
+      zipContent.forEach((relativePath, zipEntry) => {
+        if (!zipEntry.dir && /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(zipEntry.name)) {
+          imageEntries.push(zipEntry);
+        }
+      });
+
+      imageEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+      const urls = [];
+      for (let i = 0; i < imageEntries.length; i++) {
+        loadingText.textContent = `ZIP 처리 중... (${i + 1}/${imageEntries.length})`;
+        const base64 = await zipEntriesToBase64(imageEntries[i]);
+        urls.push(base64);
+      }
+      return urls;
+    }
+
+    function zipEntriesToBase64(zipEntry) {
+      return new Promise((resolve) => {
+        zipEntry.async('base64').then(data => {
+          const ext = zipEntry.name.split('.').pop().toLowerCase();
+          const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+          resolve(`data:${mime};base64,${data}`);
+        });
+      });
+    }
+
+    async function processPdfFile(pdfFile) {
+      const arrayBuffer = await pdfFile.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const urls = [];
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        loadingText.textContent = `PDF 변환 중... (${pageNum}/${pdf.numPages})`;
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+        urls.push(canvas.toDataURL('image/jpeg', 0.85));
+      }
+      return urls;
+    }
+
+    async function processImageFiles(imageFiles) {
+      const validImages = imageFiles.filter(f => f.type.startsWith('image/'));
+      validImages.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      
+      const promises = validImages.map(file => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.readAsDataURL(file);
+        });
+      });
+
+      return Promise.all(promises);
+    }
+
+    async function renderBook(imageUrls) {
+      bookContainer.innerHTML = '';
+      if (pageFlip) {
+        try { pageFlip.destroy(); } catch(e){}
+        pageFlip = null;
+      }
+
+      let naturalAspect = 0.707; // 기본 A4 비율
+
+      const imgPromises = imageUrls.map((url, index) => {
+        return new Promise((resolve) => {
+          const page = document.createElement('div');
+          page.className = 'my-page';
+          const img = document.createElement('img');
+          img.onload = () => {
+            if (index === 0 && img.naturalWidth && img.naturalHeight) {
+              naturalAspect = img.naturalWidth / img.naturalHeight;
+            }
+            resolve();
+          };
+          img.onerror = () => resolve();
+          img.src = url;
+          page.appendChild(img);
+          bookContainer.appendChild(page);
+        });
+      });
+
+      await Promise.all(imgPromises);
+
+      const containerHeight = document.getElementById('viewer-container').clientHeight - 20;
+      const calculatedWidth = Math.floor(containerHeight * naturalAspect);
+
+      const PageFlipClass = window.St ? window.St.PageFlip : window.PageFlip;
+
+      pageFlip = new PageFlipClass(bookContainer, {
+        width: calculatedWidth,
+        height: containerHeight,
+        size: "fixed",
+        minWidth: 100,
+        maxWidth: 2000,
+        minHeight: 100,
+        maxHeight: 2000,
+        maxShadowOpacity: 0.4,
+        showCover: true
+      });
+
+      const pages = bookContainer.querySelectorAll('.my-page');
+      if (pages.length > 0) {
+        pageFlip.loadFromHTML(pages);
+        updatePageIndicator();
+
+        pageFlip.on('flip', (e) => {
+          updatePageIndicator();
+        });
+      }
+    }
+
+    function updatePageIndicator() {
+      if (!pageFlip) return;
+      const totalPages = pageFlip.getPageCount();
+      const currentPage = pageFlip.getCurrentPageIndex() + 1;
+      pageNumber.textContent = `${currentPage} / ${totalPages}`;
+    }
+
+    function showLoading(msg) { loadingText.textContent = msg; loadingOverlay.classList.add('active'); }
+    function hideLoading() { loadingOverlay.classList.remove('active'); }
+  </script>
+</body>
+</html>
