@@ -80,7 +80,6 @@
       justify-content: center;
       align-items: center;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
-      will-change: transform;
     }
     .my-page {
       background-color: #ffffff;
@@ -88,8 +87,6 @@
       height: 100%;
       position: relative;
       overflow: hidden;
-      backface-visibility: hidden;
-      transform: translateZ(0);
     }
     .my-page img {
       width: 100%;
@@ -108,7 +105,7 @@
       width: 100%;
       height: 100%;
       z-index: 5;
-      pointer-events: none; /* 기본적으로 터치/클릭 감지 안함 (페이지 이동 원활) */
+      pointer-events: none;
     }
     .drawing-canvas.active { cursor: crosshair; pointer-events: auto; }
     .drawing-canvas.text-mode { cursor: text; pointer-events: auto; }
@@ -407,8 +404,7 @@
         maxHeight: 2000,
         maxShadowOpacity: 0.4,
         showCover: true,
-        useMouseEvents: true,
-        swipeDistance: 30
+        useMouseEvents: false /* 마우스 터치/드래그 오동작 차단 */
       });
 
       const pages = bookContainer.querySelectorAll('.my-page');
