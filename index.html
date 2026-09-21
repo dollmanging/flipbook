@@ -70,7 +70,7 @@
       align-items: center;
       width: 100%;
       height: calc(100vh - 50px);
-      padding: 10px;
+      padding: 0; /* 컨테이너 여백 제거 */
       overflow: hidden;
       position: relative;
       background: #181818;
@@ -82,7 +82,7 @@
       background-color: #181818;
     }
 
-    /* PageFlip 내부 모든 요소의 흰색 배경을 다크톤으로 강제 고정 */
+    /* PageFlip 내부 요소 여백 및 배경 강제 고정 */
     .stflip-container, 
     .stflip-page, 
     .stflip-page-wrapper, 
@@ -91,6 +91,8 @@
       background-color: #181818 !important;
       background: #181818 !important;
       box-shadow: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
     }
 
     .my-page {
@@ -103,7 +105,7 @@
     .my-page img {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: fill; /* 사진이 영역 전체에 딱 맞게 늘어나도록 함 */
       pointer-events: none;
       position: absolute;
       top: 0;
@@ -401,13 +403,14 @@
 
       await Promise.all(imgPromises);
 
-      const containerHeight = document.getElementById('viewer-container').clientHeight - 20;
-      const calculatedWidth = Math.floor(containerHeight * naturalAspect);
+      const containerHeight = document.getElementById('viewer-container').clientHeight;
+      // 한 페이지 폭 계산
+      const singleWidth = Math.floor(containerHeight * naturalAspect);
 
       const PageFlipClass = window.St ? window.St.PageFlip : window.PageFlip;
 
       pageFlip = new PageFlipClass(bookContainer, {
-        width: calculatedWidth,
+        width: singleWidth, // 한 쪽 폭 설정
         height: containerHeight,
         size: "fixed",
         minWidth: 100,
