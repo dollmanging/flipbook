@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>전자책 Flipbook 뷰어 (필기/메모 지원)</title>
+  <title>전자책 Flipbook 뷰어 (필기 저장 & 수정 지원)</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
@@ -45,6 +45,8 @@
       transition: background-color 0.2s;
     }
     .btn:hover { background-color: #2563eb; }
+    .btn-danger { background-color: #dc2626; }
+    .btn-danger:hover { background-color: #b91c1c; }
     .btn-nav { background-color: #374151; }
     .btn-nav:hover { background-color: #4b5563; }
     .btn-tool { background-color: #4b5563; }
@@ -167,7 +169,7 @@
 
   <header>
     <div class="title-area">
-      <h2>📖 필기 및 메모 지원 E-Book</h2>
+      <h2>📖 필기 자동 저장 & 수정 E-Book</h2>
     </div>
     <div class="controls">
       <div class="file-btn-wrapper">
@@ -206,7 +208,8 @@
       </select>
 
       <button class="btn btn-nav" id="undoBtn" title="되돌리기 (Ctrl+Z)">↩️ 실행 취소</button>
-      <button class="btn btn-nav" id="clearCanvasBtn" title="현재 페이지 필기 전체 삭제">🗑️ 필기 초기화</button>
+      <button class="btn btn-nav" id="clearCanvasBtn" title="현재 페이지 필기 삭제">🗑️ 현재쪽 초기화</button>
+      <button class="btn btn-danger" id="resetStorageBtn" title="저장된 모든 필기 데이터 삭제">🧹 전체 필기 저장 삭제</button>
 
       <div class="toolbar-divider"></div>
 
@@ -236,6 +239,7 @@
     let eraserSize = 30;
     let strokeWidth = 20;
     let selectedFont = 'sans-serif';
+    let currentFileName = 'default_book';
 
     const fileInput = document.getElementById('fileInput');
     const pageNumber = document.getElementById('pageNumber');
@@ -260,6 +264,7 @@
     const colorPicker = document.getElementById('toolColor');
     const undoBtn = document.getElementById('undoBtn');
     const clearCanvasBtn = document.getElementById('clearCanvasBtn');
+    const resetStorageBtn = document.getElementById('resetStorageBtn');
 
     Object.keys(toolBtns).forEach(tool => {
       toolBtns[tool].addEventListener('click', () => setTool(tool));
@@ -298,7 +303,6 @@
       });
     }
 
-    // 단축키 제어 (화살표 페이지 이동 & Ctrl+Z 실행 취소)
     window.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
@@ -327,6 +331,7 @@
           const ctx = canvas.getContext('2d');
           const lastState = canvas.undoStack.pop();
           ctx.putImageData(lastState, 0, 0);
+          savePageData(page);
         }
       });
     }
@@ -335,6 +340,7 @@
       const files = Array.from(e.target.files);
       if (files.length === 0) return;
 
+      currentFileName = files[0].name.split('.')[0] || 'default_book';
       showLoading('파일 처리 중...');
 
       try {
@@ -373,14 +379,26 @@
       activePages.forEach(page => {
         const canvas = page.querySelector('canvas');
         if (canvas) {
-          // 초기화 전 현재 상태 히스토리에 저장
           saveCanvasState(canvas);
           const ctx = canvas.getContext('2d');
           ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
         const memos = page.querySelectorAll('.memo-text');
         memos.forEach(m => m.remove());
+        savePageData(page);
       });
+    });
+
+    resetStorageBtn.addEventListener('click', () => {
+      if (confirm('저장된 필기 데이터를 모두 삭제하시겠습니까?')) {
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith(`ebook_note_${currentFileName}_`)) {
+            localStorage.removeItem(key);
+          }
+        });
+        alert('모든 저장 필기가 삭제되었습니다. 페이지를 다시 열면 깨끗하게 시작합니다.');
+        location.reload();
+      }
     });
 
     async function processZipFile(zipFile) {
@@ -465,13 +483,14 @@
         return new Promise((resolve) => {
           const page = document.createElement('div');
           page.className = 'my-page';
+          page.dataset.pageIndex = index;
 
           const img = document.createElement('img');
           img.onload = () => {
             if (index === 0 && img.naturalWidth && img.naturalHeight) {
               naturalAspect = img.naturalWidth / img.naturalHeight;
             }
-            setupPageCanvas(page, img.naturalWidth, img.naturalHeight);
+            setupPageCanvas(page, img.naturalWidth, img.naturalHeight, index);
             resolve();
           };
           img.onerror = () => resolve();
@@ -519,12 +538,69 @@
     function saveCanvasState(canvas) {
       if (!canvas.undoStack) canvas.undoStack = [];
       const ctx = canvas.getContext('2d');
-      // 최대 20개까지 실행 취소 기록 유지
       if (canvas.undoStack.length >= 20) canvas.undoStack.shift();
       canvas.undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
     }
 
-    function setupPageCanvas(pageElement, width, height) {
+    // 데이터 자동 저장 함수
+    function savePageData(pageElement) {
+      const pageIndex = pageElement.dataset.pageIndex;
+      const canvas = pageElement.querySelector('canvas');
+      const memos = pageElement.querySelectorAll('.memo-text');
+
+      const memoData = [];
+      memos.forEach(m => {
+        memoData.push({
+          left: m.style.left,
+          top: m.style.top,
+          fontFamily: m.style.fontFamily,
+          text: m.textContent
+        });
+      });
+
+      const dataToSave = {
+        drawing: canvas ? canvas.toDataURL() : null,
+        memos: memoData
+      };
+
+      try {
+        localStorage.setItem(`ebook_note_${currentFileName}_${pageIndex}`, JSON.stringify(dataToSave));
+      } catch(e) {
+        console.warn("용량 초과 등으로 저장에 실패했습니다.", e);
+      }
+    }
+
+    // 데이터 복원 함수
+    function loadPageData(pageElement, canvas, ctx) {
+      const pageIndex = pageElement.dataset.pageIndex;
+      const saved = localStorage.getItem(`ebook_note_${currentFileName}_${pageIndex}`);
+      if (!saved) return;
+
+      try {
+        const data = JSON.parse(saved);
+        if (data.drawing) {
+          const img = new Image();
+          img.onload = () => ctx.drawImage(img, 0, 0);
+          img.src = data.drawing;
+        }
+
+        if (data.memos && Array.isArray(data.memos)) {
+          data.memos.forEach(m => {
+            const memoDiv = document.createElement('div');
+            memoDiv.className = 'memo-text';
+            memoDiv.style.left = m.left;
+            memoDiv.style.top = m.top;
+            memoDiv.style.fontFamily = m.fontFamily;
+            memoDiv.textContent = m.text;
+            pageElement.appendChild(memoDiv);
+          });
+        }
+      } catch(e) {
+        console.error("데이터 복원 오류:", e);
+      }
+    }
+
+    function setupPageCanvas(pageElement, width, height, pageIndex) {
       const canvas = document.createElement('canvas');
       canvas.className = 'drawing-canvas';
       canvas.width = width || 800;
@@ -533,6 +609,10 @@
       pageElement.appendChild(canvas);
 
       const ctx = canvas.getContext('2d');
+
+      // 저장된 기존 필기 데이터 로드
+      loadPageData(pageElement, canvas, ctx);
+
       let isDrawing = false;
       let lastX = 0;
       let lastY = 0;
@@ -572,11 +652,11 @@
             memoDiv.style.fontFamily = selectedFont;
             memoDiv.textContent = memoText;
             pageElement.appendChild(memoDiv);
+            savePageData(pageElement);
           }
           return;
         }
 
-        // 선을 그리기 전에 히스토리 저장
         saveCanvasState(canvas);
 
         isDrawing = true;
@@ -607,7 +687,6 @@
           const r = parseInt(activeColor.slice(1,3), 16) || 255;
           const g = parseInt(activeColor.slice(3,5), 16) || 255;
           const b = parseInt(activeColor.slice(5,7), 16) || 0;
-          // 더욱 은은한 투명도 0.10 적용하여 아주 맑고 은은하게 표시
           ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.10)`;
           ctx.lineWidth = strokeWidth;
           ctx.lineCap = 'square';
@@ -624,7 +703,10 @@
       }
 
       function stopDrawing() {
-        isDrawing = false;
+        if (isDrawing) {
+          isDrawing = false;
+          savePageData(pageElement); // 필기가 끝나면 자동으로 저장소에 보관
+        }
       }
 
       canvas.addEventListener('mousedown', startDrawing);
