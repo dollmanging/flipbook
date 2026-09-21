@@ -205,7 +205,8 @@
         <option value="monospace">고정폭</option>
       </select>
 
-      <button class="btn btn-nav" id="clearCanvasBtn" title="현재 페이지 필기 삭제">🗑️ 필기 초기화</button>
+      <button class="btn btn-nav" id="undoBtn" title="되돌리기 (Ctrl+Z)">↩️ 실행 취소</button>
+      <button class="btn btn-nav" id="clearCanvasBtn" title="현재 페이지 필기 전체 삭제">🗑️ 필기 초기화</button>
 
       <div class="toolbar-divider"></div>
 
@@ -231,7 +232,7 @@
     
     let pageFlip = null;
     let currentTool = 'view';
-    let activeColor = '#ffff00'; // 형광펜 기본 노란색
+    let activeColor = '#ffff00';
     let eraserSize = 30;
     let strokeWidth = 20;
     let selectedFont = 'sans-serif';
@@ -257,6 +258,7 @@
       eraser: document.getElementById('toolEraser')
     };
     const colorPicker = document.getElementById('toolColor');
+    const undoBtn = document.getElementById('undoBtn');
     const clearCanvasBtn = document.getElementById('clearCanvasBtn');
 
     Object.keys(toolBtns).forEach(tool => {
@@ -296,7 +298,14 @@
       });
     }
 
+    // 단축키 제어 (화살표 페이지 이동 & Ctrl+Z 실행 취소)
     window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        undoLastAction();
+        return;
+      }
+
       if (currentTool !== 'view') return;
       if (!pageFlip) return;
       if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ' || e.key === 'PageDown') {
@@ -307,6 +316,20 @@
         pageFlip.flipPrev('top');
       }
     });
+
+    undoBtn.addEventListener('click', undoLastAction);
+
+    function undoLastAction() {
+      const activePages = bookContainer.querySelectorAll('.my-page');
+      activePages.forEach(page => {
+        const canvas = page.querySelector('canvas');
+        if (canvas && canvas.undoStack && canvas.undoStack.length > 0) {
+          const ctx = canvas.getContext('2d');
+          const lastState = canvas.undoStack.pop();
+          ctx.putImageData(lastState, 0, 0);
+        }
+      });
+    }
 
     fileInput.addEventListener('change', async function(e) {
       const files = Array.from(e.target.files);
@@ -350,6 +373,8 @@
       activePages.forEach(page => {
         const canvas = page.querySelector('canvas');
         if (canvas) {
+          // 초기화 전 현재 상태 히스토리에 저장
+          saveCanvasState(canvas);
           const ctx = canvas.getContext('2d');
           ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
@@ -491,11 +516,20 @@
       setTool('view');
     }
 
+    function saveCanvasState(canvas) {
+      if (!canvas.undoStack) canvas.undoStack = [];
+      const ctx = canvas.getContext('2d');
+      // 최대 20개까지 실행 취소 기록 유지
+      if (canvas.undoStack.length >= 20) canvas.undoStack.shift();
+      canvas.undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    }
+
     function setupPageCanvas(pageElement, width, height) {
       const canvas = document.createElement('canvas');
       canvas.className = 'drawing-canvas';
       canvas.width = width || 800;
       canvas.height = height || 1100;
+      canvas.undoStack = [];
       pageElement.appendChild(canvas);
 
       const ctx = canvas.getContext('2d');
@@ -542,6 +576,9 @@
           return;
         }
 
+        // 선을 그리기 전에 히스토리 저장
+        saveCanvasState(canvas);
+
         isDrawing = true;
         lastX = pos.x;
         lastY = pos.y;
@@ -566,13 +603,12 @@
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
         } else if (currentTool === 'highlighter') {
-          // multiply 합성 모드로 글씨가 지워지지 않고 비치게 만듦
           ctx.globalCompositeOperation = 'multiply';
           const r = parseInt(activeColor.slice(1,3), 16) || 255;
           const g = parseInt(activeColor.slice(3,5), 16) || 255;
           const b = parseInt(activeColor.slice(5,7), 16) || 0;
-          // 아주 연하고 맑은 형광 색상 (투명도 0.18)
-          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.18)`;
+          // 더욱 은은한 투명도 0.10 적용하여 아주 맑고 은은하게 표시
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.10)`;
           ctx.lineWidth = strokeWidth;
           ctx.lineCap = 'square';
           ctx.lineJoin = 'miter';
