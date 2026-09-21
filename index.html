@@ -91,7 +91,7 @@
     .my-page img {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: cover;
       pointer-events: none;
       position: absolute;
       top: 0;
@@ -109,15 +109,6 @@
     }
     .drawing-canvas.active { cursor: crosshair; pointer-events: auto; }
     .drawing-canvas.text-mode { cursor: text; pointer-events: auto; }
-
-    /* PageFlip 애니메이션 잔상 제거 스타일 */
-    .stflip-page {
-      backface-visibility: hidden !important;
-      -webkit-backface-visibility: hidden !important;
-    }
-    .stflip-container * {
-      box-sizing: border-box;
-    }
 
     .memo-text {
       position: absolute;
@@ -241,10 +232,10 @@
       if (!pageFlip) return;
       if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ' || e.key === 'PageDown') {
         e.preventDefault();
-        pageFlip.flipNext('top');
+        pageFlip.flipNext();
       } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
         e.preventDefault();
-        pageFlip.flipPrev('top');
+        pageFlip.flipPrev();
       }
     });
 
@@ -282,8 +273,8 @@
       }
     });
 
-    prevBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipPrev('top'); });
-    nextBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipNext('top'); });
+    prevBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipPrev(); });
+    nextBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipNext(); });
 
     clearCanvasBtn.addEventListener('click', () => {
       const activePages = bookContainer.querySelectorAll('.my-page');
@@ -411,10 +402,9 @@
         maxWidth: 2000,
         minHeight: 100,
         maxHeight: 2000,
-        showCover: false,
-        useMouseEvents: false,
-        flippingTime: 400,
-        disableFlipByClick: true
+        maxShadowOpacity: 0.4,
+        showCover: true,
+        useMouseEvents: false /* 마우스 터치/드래그 오동작 완전 차단 */
       });
 
       const pages = bookContainer.querySelectorAll('.my-page');
